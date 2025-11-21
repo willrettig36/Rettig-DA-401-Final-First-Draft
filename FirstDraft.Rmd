@@ -1,0 +1,183 @@
+---
+title: "First Draft"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(Lahman)
+View(People)
+Lahman_Player_Info <- People %>%
+  mutate(finalGame = as.Date(finalGame)) %>% 
+  filter(
+    birthYear >= 1970,                               # 🔥 NEW FILTER
+    is.na(finalGame) | finalGame >= as.Date("2015-01-01")
+  ) %>% 
+  mutate(nameFull = paste(nameFirst, nameLast)) %>%    
+  select(nameFull, weight, height, bats, throws)
+```
+
+```{r}
+library(readr)
+TJ_Surgery_List <- read_csv("TJ_Surgery_List.csv")
+```
+
+```{r}
+library(dplyr)
+
+TJ_Surgery_List <- TJ_Surgery_List %>%
+  select(
+    "Player",
+    "TJ Surgery Date",
+    "Team",
+    "Level",
+    "Position",
+    "Throws",
+    "Return Date (same level)",
+    "Recovery Time (months)"
+  )
+```
+
+
+```{r}
+library(dplyr)
+
+TJ_Surgery_List_Numbered <- TJ_Surgery_List %>%
+  arrange(Player, `TJ Surgery Date`) %>%        # earliest first
+  group_by(Player) %>%
+  mutate(Surgery_Number = row_number()) %>%
+  ungroup()
+
+library(tidyr)
+
+TJ_Surgery_Wide <- TJ_Surgery_List_Numbered %>%
+  pivot_wider(
+    id_cols = Player,
+    names_from = Surgery_Number,
+    values_from = c(
+      `TJ Surgery Date`,
+      Team,
+      Level,
+      Position,
+      Throws,
+      `Return Date (same level)`,
+      `Recovery Time (months)`
+    ),
+    names_glue = "{.value}_Surgery{Surgery_Number}"
+  )
+
+Merged_Data <- Lahman_Player_Info %>%
+  left_join(TJ_Surgery_Wide, by = c("nameFull" = "Player"))
+
+# Add Num_Surgeries
+Merged_Data <- Merged_Data %>%
+  mutate(
+    Num_Surgeries = rowSums(!is.na(select(., starts_with("TJ Surgery Date_Surgery"))))
+  ) %>%
+  relocate(Num_Surgeries, .after = throws)
+
+# 🔥 Add hadSurgery
+Merged_Data <- Merged_Data %>%
+  mutate(
+    hadSurgery = ifelse(Num_Surgeries > 0, 1, 0)
+  ) %>%
+  relocate(hadSurgery, .after = Num_Surgeries)
+
+# Add BMI
+Merged_Data <- Merged_Data %>%
+  mutate(
+    BMI = round((weight / (height^2)) * 703, 2)
+  ) %>%
+  relocate(BMI, .after = height)
+```
+
+```{r}
+Baseball_Savant_Metrics <- read.csv("PitchersFullBaseballSavant.csv")
+Baseball_Savant_Metrics <- Baseball_Savant_Metrics %>%
+  mutate(
+    last_name..first_name = gsub("^\\s+|\\s+$", "",
+                                 sub("(.*),\\s*(.*)", "\\2 \\1", last_name..first_name))
+  ) %>%
+  rename(Player_Name = last_name..first_name)
+
+Baseball_Savant_Metrics <- Baseball_Savant_Metrics %>%
+  select(-player_id)
+```
+
+```{r}
+nf_weights_full_data <- read.csv("merged_data.csv")
+nf_weights_full_data <- nf_weights_full_data %>%
+  mutate(FullName = paste(First.Name, Last.Name)) %>%
+  select(-First.Name, -Last.Name) %>%
+  relocate(FullName, .before = Date)
+
+```
+
+```{r}
+library(dplyr)
+
+nf_weights_full_data <- nf_weights_full_data %>%
+  mutate(
+    FullName = FullName %>%
+      gsub("Rehab$", "", .) %>%     # remove "Rehab" at end
+      gsub(" Rehab$", "", .) %>%    # remove " Rehab" at end
+      trimws()                      # remove trailing spaces left behind
+  )
+
+
+Averaged_Player_Date <- nf_weights_full_data %>%
+  filter(FullName %in% c(
+    "Ben Hanley",
+    "Jaden Bakhit",
+    "Beau Chaney",
+    "Drew Oerther",
+    "Luke Pappano",
+    "Boyd Westerfield",
+    "Jake Gaerke",
+    "Rhys Canan",
+    "Tucker Wilburn"
+  )) %>%
+  group_by(FullName, Date) %>%
+  summarise(
+    across(
+      c(
+        `Accel.Impulse..lb.s.`,
+        `Accel.Impulse.Score..sec.`,
+        `Clawback..sec.`,
+        `Player.Velo..mph.`,
+        `Stride.Ratio....`,
+        `Y.Back.Score..lb.lb.`,
+        `Y.Front.Score..lb.lb.`,
+        `YZ.Back.Score..lb.lb.`,
+        `YZ.Front.Score..lb.lb.`,
+        `Z.Transfer..sec.`
+      ),
+      ~ mean(.x, na.rm = TRUE)
+    ),
+    .groups = "drop"
+  )
+```
+
+```{r}
+NewtForce_Players_Info <- read.csv("NewtForce_Players_Info.csv")
+```
+
+```{r}
+Merged_NewtForce <- Merged_NewtForce %>%
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y")) %>%
+  arrange(FullName, Date)
+```
+
+```{r}
+Merged_Data_Surgery_Yes_Pitchers <- Merged_Data %>%
+  filter(
+    hadSurgery == 1,
+    Position_Surgery1 == "P"
+  )
+```
+
